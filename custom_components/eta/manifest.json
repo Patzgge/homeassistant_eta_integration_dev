@@ -1,6 +1,6 @@
 {
-  "domain": "eta",
-  "name": "ETA Heating Sensors",
+  "domain": "eta_dev",
+  "name": "ETA Heating Sensors DEV",
   "version": "0.0.2",
   "integration_type": "hub",
   "config_flow": true,
