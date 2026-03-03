@@ -1,0 +1,12 @@
+{
+  "domain": "eta",
+  "name": "ETA Heating Sensors",
+  "version": "0.0.2",
+  "integration_type": "hub",
+  "config_flow": true,
+  "iot_class": "local_polling",
+  "requirements": ["xmltodict"],
+  "documentation": "https://github.com/nigl/homeassistant_eta_integration",
+  "issue_tracker": "https://github.com/nigl/homeassistant_eta_integration/issues",
+  "codeowners": ["@nigl"]
+}
