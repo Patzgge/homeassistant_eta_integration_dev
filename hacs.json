@@ -1,5 +1,5 @@
 {
-    "name": "ETA",
+    "name": "ETA Heating DEV",
     "render_readme": true,
-    "homeassistant": "2022.4"
+    "country": "DE"
 }
