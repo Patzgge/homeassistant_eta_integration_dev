@@ -1,22 +1,13 @@
 """
-Platform for ETA sensor integration in Home Assistant
-
-Help Links:
- Entity Source: https://github.com/home-assistant/core/blob/dev/homeassistant/helpers/entity.py
- SensorEntity derives from Entity https://github.com/home-assistant/core/blob/dev/homeassistant/components/sensor/__init__.py
-
-
-author nigl
-
+Platform for ETA sensor integration in Home Assistant.
+Updated to support both numeric measurements and text-based status messages.
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import timedelta
-
-_LOGGER = logging.getLogger(__name__)
-from .api import EtaAPI
+from typing import Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -24,16 +15,19 @@ from homeassistant.components.sensor import (
     SensorStateClass,
     ENTITY_ID_FORMAT,
 )
-
 from homeassistant.core import HomeAssistant
 from homeassistant import config_entries
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity import generate_entity_id
 from homeassistant.const import CONF_HOST, CONF_PORT
+
+from .api import EtaAPI
 from .const import DOMAIN, CHOOSEN_ENTITIES, FLOAT_DICT
 
-SCAN_INTERVAL = timedelta(minutes=1)
+_LOGGER = logging.getLogger(__name__)
 
+# Polling interval for the sensors
+SCAN_INTERVAL = timedelta(minutes=1)
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -42,95 +36,88 @@ async def async_setup_entry(
 ):
     """Setup sensors from a config entry created in the integrations UI."""
     config = hass.data[DOMAIN][config_entry.entry_id]
-    # Update our config to include new repos and remove those that have been removed.
+    
     if config_entry.options:
         config.update(config_entry.options)
 
-    choosen_entities = config[CHOOSEN_ENTITIES]
+    chosen_entities = config[CHOOSEN_ENTITIES]
+    
+    # We use the FLOAT_DICT which contains uri, value, and unit
     sensors = [
         EtaSensor(
             config,
             hass,
-            entity,
-            config[FLOAT_DICT][entity][0],
-            config[FLOAT_DICT][entity][2],
+            entity_name,
+            config[FLOAT_DICT][entity_name][0], # URI
+            config[FLOAT_DICT][entity_name][2], # Unit
         )
-        for entity in choosen_entities
+        for entity_name in chosen_entities
     ]
+    
     async_add_entities(sensors, update_before_add=True)
 
-
 class EtaSensor(SensorEntity):
-    """Representation of a Sensor."""
+    """Representation of an ETA Sensor (Numeric or Text)."""
 
-    def __init__(
-        self, config, hass, name, uri, unit, state_class=SensorStateClass.MEASUREMENT
-    ):
-        """
-        Initialize sensor.
-
-        To show all values: http://192.168.178.75:8080/user/menu
-
-        There are:
-          - entity_id - used to reference id, english, e.g. "eta_outside_temperature"
-          - name - Friendly name, e.g "Außentemperatur" in local language
-
-        """
-        _LOGGER.warning("ETA Integration - init sensor")
-
-        self._attr_device_class = self.determine_device_class(unit)
-
-        if unit == "":
-            unit = None
-
-        if self._attr_device_class == SensorDeviceClass.ENERGY:
-            self._attr_state_class = SensorStateClass.TOTAL_INCREASING
-        else:
-            self._attr_state_class = state_class
-
-        self._attr_native_unit_of_measurement = unit
-        self._attr_native_value = float
-        id = name.lower().replace(" ", "_")
-        self._attr_name = name  # friendly name - local language
-        self.entity_id = generate_entity_id(ENTITY_ID_FORMAT, "eta_" + id, hass=hass)
-        self.session = async_get_clientsession(hass)
-
+    def __init__(self, config: dict, hass: HomeAssistant, name: str, uri: str, unit: str):
+        """Initialize the sensor."""
+        self._attr_name = name
         self.uri = uri
         self.host = config.get(CONF_HOST)
         self.port = config.get(CONF_PORT)
+        self.session = async_get_clientsession(hass)
+        
+        # Unique ID using host and entity name
+        self._attr_unique_id = f"eta_{self.host}_{name.replace(' ', '_')}"
+        
+        # Generate entity_id: e.g., sensor.eta_outside_temperature
+        cleaned_id = name.lower().replace(" ", "_")
+        self.entity_id = generate_entity_id(ENTITY_ID_FORMAT, f"eta_{cleaned_id}", hass=hass)
 
-        # This must be a unique value within this domain. This is done using host
-        self._attr_unique_id = "eta" + "_" + self.host + "." + name.replace(" ", "_")
+        # Determine if it's a numeric sensor or a text status
+        self._attr_device_class = self.determine_device_class(unit)
+        
+        if unit and unit.strip():
+            self._attr_native_unit_of_measurement = unit
+            # For numeric values, we use MEASUREMENT or TOTAL_INCREASING
+            if self._attr_device_class == SensorDeviceClass.ENERGY:
+                self._attr_state_class = SensorStateClass.TOTAL_INCREASING
+            else:
+                self._attr_state_class = SensorStateClass.MEASUREMENT
+        else:
+            # Text/Status sensors have no unit and no state_class
+            self._attr_native_unit_of_measurement = None
+            self._attr_state_class = None
 
     async def async_update(self):
-        """Fetch new state data for the sensor.
-        This is the only method that should fetch new data for Home Assistant.
-        readme: activate first: http://www.holzheizer-forum.de/attachment/28434-eta-restful-v1-1-pdf/
-        """
-        eta_client = EtaAPI(self.session, self.host, self.port)
-        value, _ = await eta_client.get_data(self.uri)
-        self._attr_native_value = float(value)
+        """Fetch new state data from the ETA API."""
+        try:
+            eta_client = EtaAPI(self.session, self.host, self.port)
+            value, _ = await eta_client.get_data(self.uri)
+            
+            # Update the value without forced float conversion to allow strings
+            self._attr_native_value = value
+            
+        except Exception as err:
+            _LOGGER.error("Error updating ETA sensor %s: %s", self._attr_name, err)
 
     @staticmethod
-    def determine_device_class(unit):
-        unit_dict_eta = {
+    def determine_device_class(unit: str) -> SensorDeviceClass | None:
+        """Map ETA units to Home Assistant Device Classes."""
+        unit_map = {
             "°C": SensorDeviceClass.TEMPERATURE,
             "W": SensorDeviceClass.POWER,
+            "kW": SensorDeviceClass.POWER,
             "A": SensorDeviceClass.CURRENT,
             "Hz": SensorDeviceClass.FREQUENCY,
             "Pa": SensorDeviceClass.PRESSURE,
-            "V": SensorDeviceClass.VOLTAGE,
-            "W/m²": SensorDeviceClass.IRRADIANCE,
             "bar": SensorDeviceClass.PRESSURE,
-            "kW": SensorDeviceClass.POWER,
+            "V": SensorDeviceClass.VOLTAGE,
+            "mV": SensorDeviceClass.VOLTAGE,
+            "W/m²": SensorDeviceClass.IRRADIANCE,
             "kWh": SensorDeviceClass.ENERGY,
             "kg": SensorDeviceClass.WEIGHT,
-            "mV": SensorDeviceClass.VOLTAGE,
             "s": SensorDeviceClass.DURATION,
             "%rH": SensorDeviceClass.HUMIDITY
         }
-
-        if unit in unit_dict_eta:
-            return unit_dict_eta[unit]
-        else:
-            return None
+        return unit_map.get(unit)
