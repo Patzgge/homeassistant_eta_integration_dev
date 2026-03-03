@@ -1,12 +1,14 @@
 {
   "domain": "eta_dev",
-  "name": "ETA Heating Sensors DEV",
-  "version": "0.0.2",
+  "name": "ETA Heating DEV",
+  "version": "0.0.3-dev",
+  "documentation": "https://github.com/Patzgge/homeassistant_eta_integration_dev",
+  "issue_tracker": "https://github.com/Patzgge/homeassistant_eta_integration_dev/issues",
+  "dependencies": [],
+  "codeowners": ["@Patzgge"],
+  "homeassistant": "2026.1.0",
+  "iot_class": "local_polling",
   "integration_type": "hub",
   "config_flow": true,
-  "iot_class": "local_polling",
-  "requirements": ["xmltodict"],
-  "documentation": "https://github.com/nigl/homeassistant_eta_integration",
-  "issue_tracker": "https://github.com/nigl/homeassistant_eta_integration/issues",
-  "codeowners": ["@nigl"]
+  "requirements": ["xmltodict"]
 }
